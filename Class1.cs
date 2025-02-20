@@ -102,6 +102,12 @@ public class DropshotPlugin : BasePlugin, IPluginConfig<Config>
             return HookResult.Continue;
         if (GetHorizontalSpeed(cBasePlayerPawn) > Config.Speed)
             return HookResult.Continue;
+        if (((PlayerFlags)player.Flags).HasFlag(PlayerFlags.FL_ONGROUND) || cBasePlayerPawn.GroundEntity?.IsValid == true)
+            return HookResult.Continue;
+        if (_lastShotTicks.TryGetValue(player.Slot, out var lastShotTick)&&Server.CurrentTime < lastShotTick + Config.Delay)
+            return HookResult.Continue;
+        if (_lastJumpTicks.TryGetValue(player.Slot, out var lastJumpTick)&&Server.CurrentTime < lastJumpTick + Config.JDelay)
+            return HookResult.Continue;
         _oldValue = _weaponaccuracynospread.GetPrimitiveValue<bool>();
         _weaponaccuracynospread.SetValue(true);
         if(Config.Debug.Equals(true))
