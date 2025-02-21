@@ -21,31 +21,26 @@ public class DropshotPlugin : BasePlugin, IPluginConfig<Config>
         new("55 48 89 E5 41 57 41 56 49 89 D6 41 55 41 54 49 89 FC 53 48 89 F3 48 83 EC 48 E8 ? ? ? ?");
     
     public override string ModuleName => "Dropshot Plugin";
-    public override string ModuleVersion => "1.0.2";
+    public override string ModuleVersion => "1.0.3";
     public override string ModuleAuthor => "Rexus Ohm";
 
     private readonly bool[] _nospreadEnabled = new bool[64];
     
     private readonly ConVar? _weaponaccuracynospread = ConVar.Find("weapon_accuracy_nospread");
+
+    private readonly Dictionary<ulong, DateTime> _lastJumpTicks = new Dictionary<ulong, DateTime>();
     
-    private readonly Dictionary<int, float> _lastShotTicks = new();
-    private readonly Dictionary<int, float> _lastJumpTicks = new();
-    
-    private HookResult OnWeaponFire(EventWeaponFire handler, GameEventInfo info)
-    {
-        var player = handler.Userid.Slot;
-        {
-            _lastShotTicks[player] = Server.CurrentTime;
-        }
-        return HookResult.Continue;
-    }
-   
+    private readonly Dictionary<ulong, DateTime> _lastShotTimes = new Dictionary<ulong, DateTime>();
+
     private HookResult OnPlayerJump(EventPlayerJump handler, GameEventInfo info)
     {
-        var playerjump = handler.Userid.Slot;
-        {
-            _lastJumpTicks[playerjump] = Server.CurrentTime;
-        }
+        var player = handler.Userid;
+        if (player == null || !player.IsValid) 
+            return HookResult.Continue;
+
+        if (Config.Debug)
+            Server.PrintToChatAll($" \x02[Dropshot Debug] \x01{player.PlayerName} jumped! Time: {Server.CurrentTime}");
+        _lastJumpTicks[player.SteamID] = DateTime.UtcNow;
         return HookResult.Continue;
     }
     
@@ -53,7 +48,6 @@ public class DropshotPlugin : BasePlugin, IPluginConfig<Config>
     {
         CBasePlayerWeapon_GetInaccuracy.Hook(ProcessShotPre, HookMode.Pre);
         CBasePlayerWeapon_GetInaccuracy.Hook(ProcessShotPost, HookMode.Post);
-        RegisterEventHandler<EventWeaponFire>(OnWeaponFire);
         RegisterEventHandler<EventPlayerJump>(OnPlayerJump);
         
         RegisterListener<Listeners.OnTick>(() =>
@@ -84,15 +78,29 @@ public class DropshotPlugin : BasePlugin, IPluginConfig<Config>
         {
             shouldEnable = false;
         }
-
-        if (_lastShotTicks.TryGetValue(player.Slot, out var lastShotTick)&&Server.CurrentTime < lastShotTick + Config.Delay)
+        
+        // Получаем SteamID
+        var controller = pawn.Controller.Value?.As<CBasePlayerController>();
+        ulong steamId = controller!.SteamID;
+        
+        // Проверяем задержку после последнего выстрела
+        if (_lastShotTimes.TryGetValue(steamId, out DateTime lastShotTime))
         {
-            shouldEnable = false;
+            double timeSinceLastShot = (DateTime.UtcNow - lastShotTime).TotalSeconds;
+            if (timeSinceLastShot < Config.Delay)
+            {
+                shouldEnable = false;
+            }
         }
         
-        if (_lastJumpTicks.TryGetValue(player.Slot, out var lastJumpTick)&&Server.CurrentTime < lastJumpTick + Config.JDelay)
+        // Проверяем задержку после последнего прыжка
+        if (_lastJumpTicks.TryGetValue(steamId, out DateTime lastJumpTime))
         {
-            shouldEnable = false;
+            double timeSinceLastJump = (DateTime.UtcNow - lastJumpTime).TotalSeconds;
+            if (timeSinceLastJump < Config.JDelay)
+            {
+                shouldEnable = false;
+            }
         }
 
         if (oldValue != shouldEnable)
@@ -100,10 +108,10 @@ public class DropshotPlugin : BasePlugin, IPluginConfig<Config>
             player.ReplicateConVar("weapon_accuracy_nospread", shouldEnable? "1" : "0");
             _nospreadEnabled[player.Slot] = shouldEnable;
             if(Config.Debug.Equals(true))
-                Server.PrintToChatAll(shouldEnable? "NS enabled" : "NS disabled");
+                Server.PrintToChatAll(shouldEnable? " \x02[Dropshot Debug] \x01NS enabled" : " \x02[Dropshot Debug] \x01NS disabled");
         }
     }
-    //
+    
     private bool? _oldValue;
     public HookResult ProcessShotPre(DynamicHook hook)
     {
@@ -112,27 +120,63 @@ public class DropshotPlugin : BasePlugin, IPluginConfig<Config>
             return HookResult.Continue;
         }
         if(Config.Debug.Equals(true))
-            Server.PrintToChatAll("1"); //logger before set
+            Server.PrintToChatAll(" \x02[Dropshot Debug] \x01 1"); //logger before set
         CBasePlayerWeapon weapon = hook.GetParam<CBasePlayerWeapon>(0);
         var cBasePlayerPawn = weapon.OwnerEntity.Value?.As<CBasePlayerPawn>();
         if (cBasePlayerPawn == null)
             return HookResult.Continue;
-        var player = cBasePlayerPawn.Controller.Value?.As<CCSPlayerController>();
-        if (player == null || !player.IsValid)
+        
+        // Получаем SteamID
+        var controller = cBasePlayerPawn.Controller.Value?.As<CBasePlayerController>();
+        if (controller == null)
             return HookResult.Continue;
+        ulong steamId = controller.SteamID;
         if (GetHorizontalSpeed(cBasePlayerPawn) > Config.Speed)
+        {
+            if (Config.Debug)
+                Server.PrintToChatAll($" \x02[Dropshot Debug] \x01{controller.PlayerName} has a speed out of value: \n{GetHorizontalSpeed(cBasePlayerPawn)}/{Config.Speed} unit/s");
             return HookResult.Continue;
-        if (((PlayerFlags)player.Flags).HasFlag(PlayerFlags.FL_ONGROUND) || cBasePlayerPawn.GroundEntity?.IsValid == true)
+        }
+
+        if (((PlayerFlags)cBasePlayerPawn.Flags).HasFlag(PlayerFlags.FL_ONGROUND) ||
+            cBasePlayerPawn.GroundEntity?.IsValid == true)
+        {
+            if (Config.Debug)
+                Server.PrintToChatAll($" \x02[Dropshot Debug] \x01{controller.PlayerName} stands on the ground");
             return HookResult.Continue;
-        if (_lastShotTicks.TryGetValue(player.Slot, out var lastShotTick)&&Server.CurrentTime < lastShotTick + Config.Delay)
-            return HookResult.Continue;
-        if (_lastJumpTicks.TryGetValue(player.Slot, out var lastJumpTick)&&Server.CurrentTime < lastJumpTick + Config.JDelay)
-            return HookResult.Continue;
+        }
+        
+        // Проверяем задержку после последнего выстрела
+        if (_lastShotTimes.TryGetValue(steamId, out DateTime lastShotTime))
+        {
+            double timeSinceLastShot = (DateTime.UtcNow - lastShotTime).TotalSeconds;
+            if (timeSinceLastShot < Config.Delay)
+            {
+                if (Config.Debug)
+                    Server.PrintToChatAll($" \x02[Dropshot Debug] \x01{controller.PlayerName} has delay after shot: \n{timeSinceLastShot}/{Config.Delay} sec");
+                return HookResult.Continue;
+            }
+        }
+        
+        // Проверяем задержку после последнего прыжка
+        if (_lastJumpTicks.TryGetValue(steamId, out DateTime lastJumpTime))
+        {
+            double timeSinceLastJump = (DateTime.UtcNow - lastJumpTime).TotalSeconds;
+            if (timeSinceLastJump < Config.JDelay)
+            {
+                if (Config.Debug)
+                    Server.PrintToChatAll($" \x02[Dropshot Debug] \x01{controller.PlayerName} has delay after jump: \n{timeSinceLastJump}/{Config.JDelay} sec");
+                return HookResult.Continue;
+            }
+        }
+        
         _oldValue = _weaponaccuracynospread.GetPrimitiveValue<bool>();
         _weaponaccuracynospread.SetValue(true);
         if(Config.Debug.Equals(true))
-            Server.PrintToChatAll("2"); //logger after set
-
+            Server.PrintToChatAll(" \x02[Dropshot Debug] \x01 2"); //logger after set
+        
+        // Обновляем время последнего выстрела
+        _lastShotTimes[steamId] = DateTime.UtcNow;
         return HookResult.Continue;
     }
 
