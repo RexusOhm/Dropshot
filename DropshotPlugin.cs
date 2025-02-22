@@ -31,6 +31,8 @@ public class DropshotPlugin : BasePlugin, IPluginConfig<Config>
     private readonly Dictionary<ulong, DateTime> _lastJumpTicks = new Dictionary<ulong, DateTime>();
     
     private readonly Dictionary<ulong, DateTime> _lastShotTimes = new Dictionary<ulong, DateTime>();
+    
+    private bool? _oldValue;
 
     private HookResult OnPlayerJump(EventPlayerJump handler, GameEventInfo info)
     {
@@ -112,7 +114,6 @@ public class DropshotPlugin : BasePlugin, IPluginConfig<Config>
         }
     }
     
-    private bool? _oldValue;
     public HookResult ProcessShotPre(DynamicHook hook)
     {
         if (_weaponaccuracynospread == null)
@@ -182,13 +183,15 @@ public class DropshotPlugin : BasePlugin, IPluginConfig<Config>
 
     public HookResult ProcessShotPost(DynamicHook hook)
     {
-        if (_oldValue.HasValue)
+        if (_weaponaccuracynospread == null || !_oldValue.HasValue)
         {
-            _weaponaccuracynospread!.SetValue(_oldValue);
+            return HookResult.Continue;
         }
+        
+        _weaponaccuracynospread.SetValue(_oldValue.Value);
+    
         return HookResult.Continue;
     }
-    //
     
     private float GetHorizontalSpeed(CBasePlayerPawn pawn)
     {
