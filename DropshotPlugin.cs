@@ -21,7 +21,7 @@ public class DropshotPlugin : BasePlugin, IPluginConfig<Config>
         new("55 48 89 E5 41 57 41 56 49 89 D6 41 55 41 54 49 89 FC 53 48 89 F3 48 83 EC 48 E8 ? ? ? ?");
     
     public override string ModuleName => "Dropshot Plugin";
-    public override string ModuleVersion => "1.0.3";
+    public override string ModuleVersion => "1.0.4";
     public override string ModuleAuthor => "Rexus Ohm";
 
     private readonly bool[] _nospreadEnabled = new bool[64];
@@ -39,9 +39,7 @@ public class DropshotPlugin : BasePlugin, IPluginConfig<Config>
         var player = handler.Userid;
         if (player == null || !player.IsValid) 
             return HookResult.Continue;
-
-        if (Config.Debug)
-            Server.PrintToChatAll($" \x02[Dropshot Debug] \x01{player.PlayerName} jumped! Time: {Server.CurrentTime}");
+        
         _lastJumpTicks[player.SteamID] = DateTime.UtcNow;
         return HookResult.Continue;
     }
@@ -66,8 +64,8 @@ public class DropshotPlugin : BasePlugin, IPluginConfig<Config>
 
     public override void Unload(bool hotReload)
     {
-        CBasePlayerWeapon_GetInaccuracy.Hook(ProcessShotPre, HookMode.Pre);
-        CBasePlayerWeapon_GetInaccuracy.Hook(ProcessShotPost, HookMode.Post);
+        CBasePlayerWeapon_GetInaccuracy.Unhook(ProcessShotPre, HookMode.Pre);
+        CBasePlayerWeapon_GetInaccuracy.Unhook(ProcessShotPost, HookMode.Post);
     }
 
     private void UpdatePlayerSpread(CCSPlayerController player)
@@ -189,6 +187,9 @@ public class DropshotPlugin : BasePlugin, IPluginConfig<Config>
         }
         
         _weaponaccuracynospread.SetValue(_oldValue.Value);
+        
+        if(Config.Debug.Equals(true))
+            Server.PrintToChatAll(" \x02[Dropshot Debug] \x01 3");
     
         return HookResult.Continue;
     }
