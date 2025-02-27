@@ -3,6 +3,7 @@ using CounterStrikeSharp.API;
 using CounterStrikeSharp.API.Core;
 using CounterStrikeSharp.API.Modules.Cvars;
 using CounterStrikeSharp.API.Modules.Memory.DynamicFunctions;
+using CounterStrikeSharp.API.Modules.Timers;
 using CounterStrikeSharp.API.Modules.Utils;
 
 namespace Dropshot;
@@ -21,19 +22,19 @@ public class DropshotPlugin : BasePlugin, IPluginConfig<Config>
         new("55 48 89 E5 41 57 41 56 49 89 D6 41 55 41 54 49 89 FC 53 48 89 F3 48 83 EC 48 E8 ? ? ? ?");
     
     public override string ModuleName => "Dropshot Plugin";
-    public override string ModuleVersion => "1.0.4";
+    public override string ModuleVersion => "1.0.5";
     public override string ModuleAuthor => "Rexus Ohm";
 
     private readonly bool[] _nospreadEnabled = new bool[64];
     
     private readonly ConVar? _weaponaccuracynospread = ConVar.Find("weapon_accuracy_nospread");
 
-    private readonly Dictionary<ulong, DateTime> _lastJumpTicks = new Dictionary<ulong, DateTime>();
+    private readonly Dictionary<ulong, DateTime> _lastJumpTicks = new();
     
-    private readonly Dictionary<ulong, DateTime> _lastShotTimes = new Dictionary<ulong, DateTime>();
+    private readonly Dictionary<ulong, DateTime> _lastShotTimes = new();
     
     private bool? _oldValue;
-
+    
     private HookResult OnPlayerJump(EventPlayerJump handler, GameEventInfo info)
     {
         var player = handler.Userid;
@@ -49,6 +50,10 @@ public class DropshotPlugin : BasePlugin, IPluginConfig<Config>
         CBasePlayerWeapon_GetInaccuracy.Hook(ProcessShotPre, HookMode.Pre);
         CBasePlayerWeapon_GetInaccuracy.Hook(ProcessShotPost, HookMode.Post);
         RegisterEventHandler<EventPlayerJump>(OnPlayerJump);
+        
+        RegisterEventHandler<EventPlayerDisconnect>(OnPlayerDisconnect);
+        RegisterEventHandler<EventPlayerDeath>(OnPlayerDeath);
+        RegisterListener<Listeners.OnMapStart>(OnMapStart);
         
         RegisterListener<Listeners.OnTick>(() =>
         {
@@ -203,7 +208,42 @@ public class DropshotPlugin : BasePlugin, IPluginConfig<Config>
         };
         return velocity.Length();
     }
+    
+    // очистка данных
+     private void OnMapStart(string mapName)
+    {
+        Array.Clear(_nospreadEnabled, 0, _nospreadEnabled.Length);
+        _lastShotTimes.Clear();
+        _lastJumpTicks.Clear();
+    }
+     
+    private HookResult OnPlayerDisconnect(EventPlayerDisconnect @event, GameEventInfo info)
+    {
+        var player = @event.Userid;
+        if (player != null && player.IsValid)
+        {
+            CleanupPlayerData(player.SteamID);
+        }
+        return HookResult.Continue;
+    }
 
+    private HookResult OnPlayerDeath(EventPlayerDeath @event, GameEventInfo info)
+    {
+        var player = @event.Userid;
+        if (player != null && player.IsValid)
+        {
+            CleanupPlayerData(player.SteamID);
+        }
+        return HookResult.Continue;
+    }
+    
+    private void CleanupPlayerData(ulong steamId)
+    {
+        _lastShotTimes.Remove(steamId);
+        _lastJumpTicks.Remove(steamId);
+    }
+    // конец очистки данных
+    
     public void OnConfigParsed(Config config)
     {
         if (config.Speed <= 0)
