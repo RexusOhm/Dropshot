@@ -25,7 +25,8 @@ public class DropshotPlugin : BasePlugin, IPluginConfig<Config>
     public override string ModuleVersion => "1.0.6";
     public override string ModuleAuthor => "Rexus Ohm";
 
-    private readonly bool[] _nospreadEnabled = new bool[64];
+    //private readonly bool[] _nospreadEnabled = new bool[64];
+    private readonly Dictionary<ulong, bool> _nospreadEnabled = new();
     
     private readonly ConVar? _weaponaccuracynospread = ConVar.Find("weapon_accuracy_nospread");
 
@@ -80,7 +81,11 @@ public class DropshotPlugin : BasePlugin, IPluginConfig<Config>
             return;
         float speed = GetHorizontalSpeed(pawn);
         bool shouldEnable = speed <= Config.Speed;
-        var oldValue = _nospreadEnabled[player.SteamID];
+        if (!_nospreadEnabled.TryGetValue(player.SteamID, out bool oldValue))
+        {
+            oldValue = false;
+            _nospreadEnabled[player.SteamID] = oldValue;
+        }
         if(((PlayerFlags)player.Flags).HasFlag(PlayerFlags.FL_ONGROUND) || player.GroundEntity?.IsValid == true)
         {
             shouldEnable = false;
@@ -124,13 +129,15 @@ public class DropshotPlugin : BasePlugin, IPluginConfig<Config>
         if(Config.Debug.Equals(true))
             Server.PrintToChatAll(" \x02[Dropshot Debug] \x01 1"); //logger before set
         CBasePlayerWeapon weapon = hook.GetParam<CBasePlayerWeapon>(0);
-        var playerController = weapon.OwnerEntity.Value?.As<CCSPlayerController>();
+        var playerPawn = weapon.OwnerEntity.Value?.As<CCSPlayerPawn>();
+        
+        if (playerPawn == null || !playerPawn.IsValid)
+            return HookResult.Continue;
+        
+        var playerController = playerPawn.OriginalController.Value;
         if (playerController == null || !playerController.IsValid || playerController.IsBot)
             return HookResult.Continue;
         
-        var playerPawn = playerController.PlayerPawn.Value;
-        if (playerPawn == null || !playerPawn.IsValid)
-            return HookResult.Continue;
         ulong steamId = playerController.SteamID;
         
         if (GetHorizontalSpeed(playerPawn) > Config.Speed)
@@ -188,8 +195,8 @@ public class DropshotPlugin : BasePlugin, IPluginConfig<Config>
         {
             return HookResult.Continue;
         }
-        
-        _weaponaccuracynospread.SetValue(_oldValue.Value);
+
+        Server.NextFrameAsync(() => _weaponaccuracynospread.SetValue(_oldValue.Value));
         
         if(Config.Debug.Equals(true))
             Server.PrintToChatAll(" \x02[Dropshot Debug] \x01 3");
@@ -210,9 +217,10 @@ public class DropshotPlugin : BasePlugin, IPluginConfig<Config>
     // очистка данных
      private void OnMapStart(string mapName)
     {
-        Array.Clear(_nospreadEnabled, 0, _nospreadEnabled.Length);
+        //Array.Clear(_nospreadEnabled, 0, _nospreadEnabled.Length);
         _lastShotTimes.Clear();
         _lastJumpTicks.Clear();
+        _nospreadEnabled.Clear();
     }
      
     private HookResult OnPlayerDisconnect(EventPlayerDisconnect @event, GameEventInfo info)
