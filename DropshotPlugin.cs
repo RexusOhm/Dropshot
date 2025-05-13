@@ -3,6 +3,7 @@ using CounterStrikeSharp.API;
 using CounterStrikeSharp.API.Core;
 using CounterStrikeSharp.API.Modules.Cvars;
 using CounterStrikeSharp.API.Modules.Memory.DynamicFunctions;
+using CounterStrikeSharp.API.Modules.Timers;
 using CounterStrikeSharp.API.Modules.Utils;
 
 namespace Dropshot;
@@ -17,11 +18,11 @@ public class Config : BasePluginConfig
 
 public class DropshotPlugin : BasePlugin, IPluginConfig<Config>
 {
-    public static readonly MemoryFunctionWithReturn<CBasePlayerWeapon, IntPtr, IntPtr, IntPtr, float, float> CBasePlayerWeapon_GetInaccuracy =
+    public static readonly MemoryFunctionWithReturn<CBasePlayerWeapon, IntPtr, IntPtr, IntPtr, float, float> CBasePlayerWeaponGetInaccuracy =
         new("55 48 89 E5 41 57 41 56 49 89 D6 41 55 41 54 49 89 FC 53 48 89 F3 48 83 EC 48 E8 ? ? ? ?");
     
     public override string ModuleName => "Dropshot Plugin";
-    public override string ModuleVersion => "1.0.5";
+    public override string ModuleVersion => "1.0.6";
     public override string ModuleAuthor => "Rexus Ohm";
 
     private readonly bool[] _nospreadEnabled = new bool[64];
@@ -46,49 +47,47 @@ public class DropshotPlugin : BasePlugin, IPluginConfig<Config>
     
     public override void Load(bool hotReload)
     {
-        CBasePlayerWeapon_GetInaccuracy.Hook(ProcessShotPre, HookMode.Pre);
-        CBasePlayerWeapon_GetInaccuracy.Hook(ProcessShotPost, HookMode.Post);
+        CBasePlayerWeaponGetInaccuracy.Hook(ProcessShotPre, HookMode.Pre);
+        CBasePlayerWeaponGetInaccuracy.Hook(ProcessShotPost, HookMode.Post);
         RegisterEventHandler<EventPlayerJump>(OnPlayerJump);
         
         RegisterEventHandler<EventPlayerDisconnect>(OnPlayerDisconnect);
         RegisterEventHandler<EventPlayerDeath>(OnPlayerDeath);
         RegisterListener<Listeners.OnMapStart>(OnMapStart);
         
-        RegisterListener<Listeners.OnTick>(() =>
+        //RegisterListener<Listeners.OnTick>(() =>
+        AddTimer(0.1f, () => 
         {
             foreach (var player in Utilities.GetPlayers().Where(p => 
-                         p.IsValid && 
-                         p.PawnIsAlive && 
-                         p.Pawn.Value != null))
+                         p.IsValid && p.PawnIsAlive && 
+                         p.Pawn.Value is not null && !p.IsBot))
             {
                 UpdatePlayerSpread(player);
             }
-        });
+        }, TimerFlags.REPEAT | TimerFlags.STOP_ON_MAPCHANGE);
     }
 
     public override void Unload(bool hotReload)
     {
-        CBasePlayerWeapon_GetInaccuracy.Unhook(ProcessShotPre, HookMode.Pre);
-        CBasePlayerWeapon_GetInaccuracy.Unhook(ProcessShotPost, HookMode.Post);
+        CBasePlayerWeaponGetInaccuracy.Unhook(ProcessShotPre, HookMode.Pre);
+        CBasePlayerWeaponGetInaccuracy.Unhook(ProcessShotPost, HookMode.Post);
     }
 
     private void UpdatePlayerSpread(CCSPlayerController player)
     {
-        var pawn = player.Pawn.Value!;
+        var pawn = player.PlayerPawn.Value;
+        if (pawn == null || !pawn.IsValid)
+            return;
         float speed = GetHorizontalSpeed(pawn);
         bool shouldEnable = speed <= Config.Speed;
-        var oldValue = _nospreadEnabled[player.Slot];
-        if(((PlayerFlags)player.Flags).HasFlag(PlayerFlags.FL_ONGROUND) || pawn.GroundEntity?.IsValid == true)
+        var oldValue = _nospreadEnabled[player.SteamID];
+        if(((PlayerFlags)player.Flags).HasFlag(PlayerFlags.FL_ONGROUND) || player.GroundEntity?.IsValid == true)
         {
             shouldEnable = false;
         }
-        
-        // Получаем SteamID
-        var controller = pawn.Controller.Value?.As<CBasePlayerController>();
-        ulong steamId = controller!.SteamID;
-        
+
         // Проверяем задержку после последнего выстрела
-        if (_lastShotTimes.TryGetValue(steamId, out DateTime lastShotTime))
+        if (_lastShotTimes.TryGetValue(player.SteamID, out DateTime lastShotTime))
         {
             double timeSinceLastShot = (DateTime.UtcNow - lastShotTime).TotalSeconds;
             if (timeSinceLastShot < Config.Delay)
@@ -98,7 +97,7 @@ public class DropshotPlugin : BasePlugin, IPluginConfig<Config>
         }
         
         // Проверяем задержку после последнего прыжка
-        if (_lastJumpTicks.TryGetValue(steamId, out DateTime lastJumpTime))
+        if (_lastJumpTicks.TryGetValue(player.SteamID, out DateTime lastJumpTime))
         {
             double timeSinceLastJump = (DateTime.UtcNow - lastJumpTime).TotalSeconds;
             if (timeSinceLastJump < Config.JDelay)
@@ -110,7 +109,7 @@ public class DropshotPlugin : BasePlugin, IPluginConfig<Config>
         if (oldValue != shouldEnable)
         {
             player.ReplicateConVar("weapon_accuracy_nospread", shouldEnable? "1" : "0");
-            _nospreadEnabled[player.Slot] = shouldEnable;
+            _nospreadEnabled[player.SteamID] = shouldEnable;
             if(Config.Debug.Equals(true))
                 Server.PrintToChatAll(shouldEnable? " \x02[Dropshot Debug] \x01NS enabled" : " \x02[Dropshot Debug] \x01NS disabled");
         }
@@ -125,27 +124,27 @@ public class DropshotPlugin : BasePlugin, IPluginConfig<Config>
         if(Config.Debug.Equals(true))
             Server.PrintToChatAll(" \x02[Dropshot Debug] \x01 1"); //logger before set
         CBasePlayerWeapon weapon = hook.GetParam<CBasePlayerWeapon>(0);
-        var cBasePlayerPawn = weapon.OwnerEntity.Value?.As<CBasePlayerPawn>();
-        if (cBasePlayerPawn == null)
+        var playerController = weapon.OwnerEntity.Value?.As<CCSPlayerController>();
+        if (playerController == null || !playerController.IsValid || playerController.IsBot)
             return HookResult.Continue;
         
-        // Получаем SteamID
-        var controller = cBasePlayerPawn.Controller.Value?.As<CBasePlayerController>();
-        if (controller == null)
+        var playerPawn = playerController.PlayerPawn.Value;
+        if (playerPawn == null || !playerPawn.IsValid)
             return HookResult.Continue;
-        ulong steamId = controller.SteamID;
-        if (GetHorizontalSpeed(cBasePlayerPawn) > Config.Speed)
+        ulong steamId = playerController.SteamID;
+        
+        if (GetHorizontalSpeed(playerPawn) > Config.Speed)
         {
             if (Config.Debug)
-                Server.PrintToChatAll($" \x02[Dropshot Debug] \x01{controller.PlayerName} has a speed out of value: \n{GetHorizontalSpeed(cBasePlayerPawn)}/{Config.Speed} unit/s");
+                Server.PrintToChatAll($" \x02[Dropshot Debug] \x01{playerController.PlayerName} has a speed out of value: \n{GetHorizontalSpeed(playerPawn)}/{Config.Speed} unit/s");
             return HookResult.Continue;
         }
 
-        if (((PlayerFlags)cBasePlayerPawn.Flags).HasFlag(PlayerFlags.FL_ONGROUND) ||
-            cBasePlayerPawn.GroundEntity?.IsValid == true)
+        if (((PlayerFlags)playerPawn.Flags).HasFlag(PlayerFlags.FL_ONGROUND) ||
+            playerPawn.GroundEntity?.IsValid == true)
         {
             if (Config.Debug)
-                Server.PrintToChatAll($" \x02[Dropshot Debug] \x01{controller.PlayerName} stands on the ground");
+                Server.PrintToChatAll($" \x02[Dropshot Debug] \x01{playerController.PlayerName} stands on the ground");
             return HookResult.Continue;
         }
         
@@ -156,7 +155,7 @@ public class DropshotPlugin : BasePlugin, IPluginConfig<Config>
             if (timeSinceLastShot < Config.Delay)
             {
                 if (Config.Debug)
-                    Server.PrintToChatAll($" \x02[Dropshot Debug] \x01{controller.PlayerName} has delay after shot: \n{timeSinceLastShot}/{Config.Delay} sec");
+                    Server.PrintToChatAll($" \x02[Dropshot Debug] \x01{playerController.PlayerName} has delay after shot: \n{timeSinceLastShot}/{Config.Delay} sec");
                 return HookResult.Continue;
             }
         }
@@ -168,7 +167,7 @@ public class DropshotPlugin : BasePlugin, IPluginConfig<Config>
             if (timeSinceLastJump < Config.JDelay)
             {
                 if (Config.Debug)
-                    Server.PrintToChatAll($" \x02[Dropshot Debug] \x01{controller.PlayerName} has delay after jump: \n{timeSinceLastJump}/{Config.JDelay} sec");
+                    Server.PrintToChatAll($" \x02[Dropshot Debug] \x01{playerController.PlayerName} has delay after jump: \n{timeSinceLastJump}/{Config.JDelay} sec");
                 return HookResult.Continue;
             }
         }
@@ -198,7 +197,7 @@ public class DropshotPlugin : BasePlugin, IPluginConfig<Config>
         return HookResult.Continue;
     }
     
-    private float GetHorizontalSpeed(CBasePlayerPawn pawn)
+    private float GetHorizontalSpeed(CCSPlayerPawn pawn)
     {
         Vector velocity = new Vector()
         {
