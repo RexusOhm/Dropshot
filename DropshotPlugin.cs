@@ -65,7 +65,7 @@ public class DropshotPlugin : BasePlugin, IPluginConfig<Config>
             {
                 UpdatePlayerSpread(player);
             }
-        }, TimerFlags.REPEAT | TimerFlags.STOP_ON_MAPCHANGE);
+        }, TimerFlags.REPEAT);
     }
 
     public override void Unload(bool hotReload)
