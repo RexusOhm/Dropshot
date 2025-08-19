@@ -19,10 +19,10 @@ public class Config : BasePluginConfig
 public class DropshotPlugin : BasePlugin, IPluginConfig<Config>
 {
     public static readonly MemoryFunctionWithReturn<CBasePlayerWeapon, IntPtr, IntPtr, IntPtr, float, float> CBasePlayerWeaponGetInaccuracy =
-        new("55 48 89 E5 41 57 41 56 49 89 D6 41 55 41 54 49 89 FC 53 48 89 F3 48 83 EC 48 E8 ? ? ? ?");
-    
-    public override string ModuleName => "Dropshot Plugin";
-    public override string ModuleVersion => "1.0.6";
+        new("55 48 89 E5 41 57 41 56 49 89 D6 41 55 49 89 F5 41 54 53 48 89 FB 48 83 EC ? E8");
+                                                                                                                                                                                                                                                                                                                                          
+    public override string ModuleName => "Dropshot";
+    public override string ModuleVersion => "1.0.7";
     public override string ModuleAuthor => "Rexus Ohm";
 
     //private readonly bool[] _nospreadEnabled = new bool[64];
@@ -30,9 +30,9 @@ public class DropshotPlugin : BasePlugin, IPluginConfig<Config>
     
     private readonly ConVar? _weaponaccuracynospread = ConVar.Find("weapon_accuracy_nospread");
 
-    private readonly Dictionary<ulong, DateTime> _lastJumpTicks = new();
+    private readonly Dictionary<ulong, float> _lastJumpTicks = new();
     
-    private readonly Dictionary<ulong, DateTime> _lastShotTimes = new();
+    private readonly Dictionary<ulong, float> _lastShotTimes = new();
     
     private bool? _oldValue;
     
@@ -42,7 +42,7 @@ public class DropshotPlugin : BasePlugin, IPluginConfig<Config>
         if (player == null || !player.IsValid) 
             return HookResult.Continue;
         
-        _lastJumpTicks[player.SteamID] = DateTime.UtcNow;
+        _lastJumpTicks[player.SteamID] = Server.CurrentTime;
         return HookResult.Continue;
     }
     
@@ -57,15 +57,22 @@ public class DropshotPlugin : BasePlugin, IPluginConfig<Config>
         RegisterListener<Listeners.OnMapStart>(OnMapStart);
         
         //RegisterListener<Listeners.OnTick>(() =>
-        AddTimer(0.1f, () => 
+        try
         {
-            foreach (var player in Utilities.GetPlayers().Where(p => 
-                         p.IsValid && p.PawnIsAlive && 
-                         p.Pawn.Value is not null && !p.IsBot))
+            AddTimer(0.1f, () =>
             {
-                UpdatePlayerSpread(player);
-            }
-        }, TimerFlags.REPEAT | TimerFlags.STOP_ON_MAPCHANGE);
+                foreach (var player in Utilities.GetPlayers().Where(p => 
+                             p.IsValid && p.PawnIsAlive && 
+                             p.Pawn.Value is not null && !p.IsBot))
+                {
+                    UpdatePlayerSpread(player);
+                }
+            }, TimerFlags.REPEAT | TimerFlags.STOP_ON_MAPCHANGE);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine(ex);
+        }
     }
 
     public override void Unload(bool hotReload)
@@ -92,9 +99,9 @@ public class DropshotPlugin : BasePlugin, IPluginConfig<Config>
         }
 
         // Проверяем задержку после последнего выстрела
-        if (_lastShotTimes.TryGetValue(player.SteamID, out DateTime lastShotTime))
+        if (_lastShotTimes.TryGetValue(player.SteamID, out float lastShotTime))
         {
-            double timeSinceLastShot = (DateTime.UtcNow - lastShotTime).TotalSeconds;
+            var timeSinceLastShot = Server.CurrentTime - lastShotTime;
             if (timeSinceLastShot < Config.Delay)
             {
                 shouldEnable = false;
@@ -102,9 +109,9 @@ public class DropshotPlugin : BasePlugin, IPluginConfig<Config>
         }
         
         // Проверяем задержку после последнего прыжка
-        if (_lastJumpTicks.TryGetValue(player.SteamID, out DateTime lastJumpTime))
+        if (_lastJumpTicks.TryGetValue(player.SteamID, out float lastJumpTime))
         {
-            double timeSinceLastJump = (DateTime.UtcNow - lastJumpTime).TotalSeconds;
+            var timeSinceLastJump = Server.CurrentTime - lastJumpTime;
             if (timeSinceLastJump < Config.JDelay)
             {
                 shouldEnable = false;
@@ -119,15 +126,15 @@ public class DropshotPlugin : BasePlugin, IPluginConfig<Config>
                 Server.PrintToChatAll(shouldEnable? " \x02[Dropshot Debug] \x01NS enabled" : " \x02[Dropshot Debug] \x01NS disabled");
         }
     }
-    
-    public HookResult ProcessShotPre(DynamicHook hook)
+
+    private HookResult ProcessShotPre(DynamicHook hook)
     {
         if (_weaponaccuracynospread == null)
         {
             return HookResult.Continue;
         }
         if(Config.Debug.Equals(true))
-            Server.PrintToChatAll(" \x02[Dropshot Debug] \x01 1"); //logger before set
+            Server.PrintToChatAll(" \x02[Dropshot Debug] \x01 1 start hook"); //logger before set
         CBasePlayerWeapon weapon = hook.GetParam<CBasePlayerWeapon>(0);
         var playerPawn = weapon.OwnerEntity.Value?.As<CCSPlayerPawn>();
         
@@ -156,9 +163,9 @@ public class DropshotPlugin : BasePlugin, IPluginConfig<Config>
         }
         
         // Проверяем задержку после последнего выстрела
-        if (_lastShotTimes.TryGetValue(steamId, out DateTime lastShotTime))
+        if (_lastShotTimes.TryGetValue(steamId, out float lastShotTime))
         {
-            double timeSinceLastShot = (DateTime.UtcNow - lastShotTime).TotalSeconds;
+            var timeSinceLastShot = Server.CurrentTime - lastShotTime;
             if (timeSinceLastShot < Config.Delay)
             {
                 if (Config.Debug)
@@ -168,9 +175,9 @@ public class DropshotPlugin : BasePlugin, IPluginConfig<Config>
         }
         
         // Проверяем задержку после последнего прыжка
-        if (_lastJumpTicks.TryGetValue(steamId, out DateTime lastJumpTime))
+        if (_lastJumpTicks.TryGetValue(steamId, out float lastJumpTime))
         {
-            double timeSinceLastJump = (DateTime.UtcNow - lastJumpTime).TotalSeconds;
+            var timeSinceLastJump = Server.CurrentTime - lastJumpTime;
             if (timeSinceLastJump < Config.JDelay)
             {
                 if (Config.Debug)
@@ -182,24 +189,24 @@ public class DropshotPlugin : BasePlugin, IPluginConfig<Config>
         _oldValue = _weaponaccuracynospread.GetPrimitiveValue<bool>();
         _weaponaccuracynospread.SetValue(true);
         if(Config.Debug.Equals(true))
-            Server.PrintToChatAll(" \x02[Dropshot Debug] \x01 2"); //logger after set
+            Server.PrintToChatAll(" \x02[Dropshot Debug] \x01 2 nospread changed"); //logger after set
         
         // Обновляем время последнего выстрела
-        _lastShotTimes[steamId] = DateTime.UtcNow;
+        _lastShotTimes[steamId] = Server.CurrentTime;
         return HookResult.Continue;
     }
 
-    public HookResult ProcessShotPost(DynamicHook hook)
+    private HookResult ProcessShotPost(DynamicHook hook)
     {
         if (_weaponaccuracynospread == null || !_oldValue.HasValue)
         {
             return HookResult.Continue;
         }
 
-        Server.NextFrameAsync(() => _weaponaccuracynospread.SetValue(_oldValue.Value));
+        Server.NextFrame(() => _weaponaccuracynospread.SetValue(_oldValue.Value));
         
         if(Config.Debug.Equals(true))
-            Server.PrintToChatAll(" \x02[Dropshot Debug] \x01 3");
+            Server.PrintToChatAll(" \x02[Dropshot Debug] \x01 3 cleanup");
     
         return HookResult.Continue;
     }
@@ -254,7 +261,7 @@ public class DropshotPlugin : BasePlugin, IPluginConfig<Config>
     {
         if (config.Speed <= 0)
         {
-            config.Speed = 80;
+            config.Speed = 200;
         }
 
         if (config.Delay < 0)
@@ -269,5 +276,5 @@ public class DropshotPlugin : BasePlugin, IPluginConfig<Config>
         Config = config;
     }
 
-    public Config Config { get; set; }
+    public required Config Config { get; set; }
 }
