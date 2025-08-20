@@ -11,8 +11,9 @@ namespace Dropshot;
 public class Config : BasePluginConfig
 {
     [JsonPropertyName("Player speed")] public float Speed { get; set; } = 200;
-    [JsonPropertyName("After shot delay")] public float Delay { get; set; } = 5;
-    [JsonPropertyName("After jump delay")] public float JDelay { get; set; } = 2;
+    [JsonPropertyName("After shot delay")] public float ShotDelay { get; set; } = 5;
+    [JsonPropertyName("After jump delay")] public float JumpDelay { get; set; } = 2;
+    [JsonPropertyName("On ground checker")] public bool OnGroundChecker { get; set; } = true;
     [JsonPropertyName("Debug")] public bool Debug { get; set; } = false;
 }
 
@@ -22,29 +23,16 @@ public class DropshotPlugin : BasePlugin, IPluginConfig<Config>
         new("55 48 89 E5 41 57 41 56 49 89 D6 41 55 49 89 F5 41 54 53 48 89 FB 48 83 EC ? E8");
                                                                                                                                                                                                                                                                                                                                           
     public override string ModuleName => "Dropshot";
-    public override string ModuleVersion => "1.0.7";
+    public override string ModuleVersion => "1.0.8";
     public override string ModuleAuthor => "Rexus Ohm";
 
-    //private readonly bool[] _nospreadEnabled = new bool[64];
-    private readonly Dictionary<ulong, bool> _nospreadEnabled = new();
-    
     private readonly ConVar? _weaponaccuracynospread = ConVar.Find("weapon_accuracy_nospread");
-
-    private readonly Dictionary<ulong, float> _lastJumpTicks = new();
     
+    private readonly Dictionary<ulong, bool> _nospreadEnabled = new();
+    private readonly Dictionary<ulong, float> _lastJumpTicks = new();
     private readonly Dictionary<ulong, float> _lastShotTimes = new();
     
     private bool? _oldValue;
-    
-    private HookResult OnPlayerJump(EventPlayerJump handler, GameEventInfo info)
-    {
-        var player = handler.Userid;
-        if (player == null || !player.IsValid) 
-            return HookResult.Continue;
-        
-        _lastJumpTicks[player.SteamID] = Server.CurrentTime;
-        return HookResult.Continue;
-    }
     
     public override void Load(bool hotReload)
     {
@@ -55,8 +43,7 @@ public class DropshotPlugin : BasePlugin, IPluginConfig<Config>
         RegisterEventHandler<EventPlayerDisconnect>(OnPlayerDisconnect);
         RegisterEventHandler<EventPlayerDeath>(OnPlayerDeath);
         RegisterListener<Listeners.OnMapStart>(OnMapStart);
-        
-        //RegisterListener<Listeners.OnTick>(() =>
+
         try
         {
             AddTimer(0.1f, () =>
@@ -93,26 +80,26 @@ public class DropshotPlugin : BasePlugin, IPluginConfig<Config>
             oldValue = false;
             _nospreadEnabled[player.SteamID] = oldValue;
         }
-        if(((PlayerFlags)player.Flags).HasFlag(PlayerFlags.FL_ONGROUND) || player.GroundEntity?.IsValid == true)
+        if(Config.OnGroundChecker && (((PlayerFlags)player.Flags).HasFlag(PlayerFlags.FL_ONGROUND) || player.GroundEntity?.IsValid == true))
         {
             shouldEnable = false;
         }
 
         // Проверяем задержку после последнего выстрела
-        if (_lastShotTimes.TryGetValue(player.SteamID, out float lastShotTime))
+        if (Config.ShotDelay > 0 && _lastShotTimes.TryGetValue(player.SteamID, out float lastShotTime))
         {
             var timeSinceLastShot = Server.CurrentTime - lastShotTime;
-            if (timeSinceLastShot < Config.Delay)
+            if (timeSinceLastShot < Config.ShotDelay)
             {
                 shouldEnable = false;
             }
         }
         
         // Проверяем задержку после последнего прыжка
-        if (_lastJumpTicks.TryGetValue(player.SteamID, out float lastJumpTime))
+        if (Config.JumpDelay > 0 && _lastJumpTicks.TryGetValue(player.SteamID, out float lastJumpTime))
         {
             var timeSinceLastJump = Server.CurrentTime - lastJumpTime;
-            if (timeSinceLastJump < Config.JDelay)
+            if (timeSinceLastJump < Config.JumpDelay)
             {
                 shouldEnable = false;
             }
@@ -154,8 +141,7 @@ public class DropshotPlugin : BasePlugin, IPluginConfig<Config>
             return HookResult.Continue;
         }
 
-        if (((PlayerFlags)playerPawn.Flags).HasFlag(PlayerFlags.FL_ONGROUND) ||
-            playerPawn.GroundEntity?.IsValid == true)
+        if (Config.OnGroundChecker && (((PlayerFlags)playerPawn.Flags).HasFlag(PlayerFlags.FL_ONGROUND) || playerPawn.GroundEntity?.IsValid == true))
         {
             if (Config.Debug)
                 Server.PrintToChatAll($" \x02[Dropshot Debug] \x01{playerController.PlayerName} stands on the ground");
@@ -163,25 +149,25 @@ public class DropshotPlugin : BasePlugin, IPluginConfig<Config>
         }
         
         // Проверяем задержку после последнего выстрела
-        if (_lastShotTimes.TryGetValue(steamId, out float lastShotTime))
+        if (Config.ShotDelay > 0 && _lastShotTimes.TryGetValue(steamId, out float lastShotTime))
         {
             var timeSinceLastShot = Server.CurrentTime - lastShotTime;
-            if (timeSinceLastShot < Config.Delay)
+            if (timeSinceLastShot < Config.ShotDelay)
             {
                 if (Config.Debug)
-                    Server.PrintToChatAll($" \x02[Dropshot Debug] \x01{playerController.PlayerName} has delay after shot: \n{timeSinceLastShot}/{Config.Delay} sec");
+                    Server.PrintToChatAll($" \x02[Dropshot Debug] \x01{playerController.PlayerName} has delay after shot: \n{timeSinceLastShot}/{Config.ShotDelay} sec");
                 return HookResult.Continue;
             }
         }
         
         // Проверяем задержку после последнего прыжка
-        if (_lastJumpTicks.TryGetValue(steamId, out float lastJumpTime))
+        if (Config.JumpDelay > 0 && _lastJumpTicks.TryGetValue(steamId, out float lastJumpTime))
         {
             var timeSinceLastJump = Server.CurrentTime - lastJumpTime;
-            if (timeSinceLastJump < Config.JDelay)
+            if (timeSinceLastJump < Config.JumpDelay)
             {
                 if (Config.Debug)
-                    Server.PrintToChatAll($" \x02[Dropshot Debug] \x01{playerController.PlayerName} has delay after jump: \n{timeSinceLastJump}/{Config.JDelay} sec");
+                    Server.PrintToChatAll($" \x02[Dropshot Debug] \x01{playerController.PlayerName} has delay after jump: \n{timeSinceLastJump}/{Config.JumpDelay} sec");
                 return HookResult.Continue;
             }
         }
@@ -221,10 +207,19 @@ public class DropshotPlugin : BasePlugin, IPluginConfig<Config>
         return velocity.Length();
     }
     
+    private HookResult OnPlayerJump(EventPlayerJump handler, GameEventInfo info)
+    {
+        var player = handler.Userid;
+        if (player == null || !player.IsValid) 
+            return HookResult.Continue;
+        
+        _lastJumpTicks[player.SteamID] = Server.CurrentTime;
+        return HookResult.Continue;
+    }
+    
     // очистка данных
      private void OnMapStart(string mapName)
     {
-        //Array.Clear(_nospreadEnabled, 0, _nospreadEnabled.Length);
         _lastShotTimes.Clear();
         _lastJumpTicks.Clear();
         _nospreadEnabled.Clear();
@@ -264,14 +259,14 @@ public class DropshotPlugin : BasePlugin, IPluginConfig<Config>
             config.Speed = 200;
         }
 
-        if (config.Delay < 0)
+        if (config.ShotDelay < 0)
         {
-            config.Delay = 0;
+            config.ShotDelay = 0;
         }
         
-        if (config.JDelay < 0)
+        if (config.JumpDelay < 0)
         {
-            config.JDelay = 0;
+            config.JumpDelay = 0;
         }
         Config = config;
     }
