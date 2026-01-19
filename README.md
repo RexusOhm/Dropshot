@@ -6,4 +6,4 @@ You can adjust the speed of the player required to turn on the NoSpread mode and
 
 Video demonstration of the plugin in action:
 
-[![](https://markdown-videos-api.jorgenkh.no/youtube/mOquZeqtv7M)](https://youtu.be/mOquZeqtv7M)
+[![](https://markdown-videos-api.jorgenkh.no/youtube/mOquZeqtv7M.gif?width=480&height=320&duration=500)](https://youtu.be/mOquZeqtv7M)
