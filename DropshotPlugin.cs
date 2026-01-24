@@ -23,11 +23,8 @@ public class Config : BasePluginConfig
 
 public class DropshotPlugin : BasePlugin, IPluginConfig<Config>
 {
-    /*private static readonly MemoryFunctionWithReturn<CBasePlayerWeapon, IntPtr, IntPtr, float> CBasePlayerWeaponGetInaccuracy =
-        new("55 48 89 E5 41 57 41 56 49 89 F6 41 55 49 89 D5 41 54 53 48 89 FB 48 83 EC ? E8");*/
-                                                                                                                                                                                                                                                                                                                                          
     public override string ModuleName => "Dropshot";
-    public override string ModuleVersion => "1.1.0";
+    public override string ModuleVersion => "1.1.1";
     public override string ModuleAuthor => "Rexus Ohm";
     
     private MemoryFunctionWithReturn<CCSWeaponBaseGun, IntPtr, IntPtr, float>? _getInaccuracyFunc;
