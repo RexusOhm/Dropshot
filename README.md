@@ -80,6 +80,7 @@ private void OnDropshotShot(CCSPlayerController player)
     // called when player shoots with no-spread active
 }
 ```
+> Full usage example: [ExampleAddon.cs](https://github.com/RexusOhm/Dropshot/blob/master/ExampleAddon/ExampleAddon.cs)
 
 ------------------------------------------------------------------------
 
