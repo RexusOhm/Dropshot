@@ -15,9 +15,11 @@ addons/counterstrikesharp/
 ├── plugins/
 │   └── Dropshot/
 │       └── Dropshot.dll
-└── shared/
-    └── Dropshot.API/
-        └── Dropshot.API.dll
+├── shared/
+│   └── Dropshot.API/
+│       └── Dropshot.API.dll
+└── gamedata/
+    └── dropshot.json
 ```
 
 ------------------------------------------------------------------------
