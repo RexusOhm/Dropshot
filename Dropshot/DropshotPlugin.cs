@@ -38,7 +38,7 @@ public class DropshotPlugin : BasePlugin, IPluginConfig<Config>, IDropshotApi
     private readonly float[] _lastShotTimes = new float[MaxPlayers];
     private readonly bool[] _lastSpreadStates = new bool[MaxPlayers];
     private readonly CCSPlayerController?[] _cachedControllers = new CCSPlayerController[MaxPlayers];
-    
+    private readonly bool[] _dropshotShotFired = new bool[MaxPlayers];
     private bool _isServerNoSpread;
     private Timer? _timer;
 
@@ -294,7 +294,13 @@ public class DropshotPlugin : BasePlugin, IPluginConfig<Config>, IDropshotApi
             
             try
             {
-                OnDropshotShot?.Invoke(playerController);
+                if (!_dropshotShotFired[slot])
+                {
+                    _dropshotShotFired[slot] = true;
+                    OnDropshotShot?.Invoke(playerController);
+                    
+                    Server.NextFrame(() => _dropshotShotFired[slot] = false);
+                }
             }
             catch (Exception e)
             {
