@@ -1,0 +1,22 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Dropshot", "Dropshot\Dropshot.csproj", "{E8F6EC00-1EF2-4C19-B047-1E2C65D86F20}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Dropshot.API", "Dropshot.API\Dropshot.API.csproj", "{EA79FF7B-7B81-4E91-9731-BE536821636F}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{E8F6EC00-1EF2-4C19-B047-1E2C65D86F20}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{E8F6EC00-1EF2-4C19-B047-1E2C65D86F20}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{E8F6EC00-1EF2-4C19-B047-1E2C65D86F20}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{E8F6EC00-1EF2-4C19-B047-1E2C65D86F20}.Release|Any CPU.Build.0 = Release|Any CPU
+		{EA79FF7B-7B81-4E91-9731-BE536821636F}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{EA79FF7B-7B81-4E91-9731-BE536821636F}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{EA79FF7B-7B81-4E91-9731-BE536821636F}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{EA79FF7B-7B81-4E91-9731-BE536821636F}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+EndGlobal

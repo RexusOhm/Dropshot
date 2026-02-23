@@ -1,10 +1,12 @@
 using System.Text.Json.Serialization;
 using CounterStrikeSharp.API;
 using CounterStrikeSharp.API.Core;
+using CounterStrikeSharp.API.Core.Capabilities;
 using CounterStrikeSharp.API.Modules.Cvars;
 using CounterStrikeSharp.API.Modules.Memory.DynamicFunctions;
 using CounterStrikeSharp.API.Modules.Timers;
 using CounterStrikeSharp.API.Modules.Utils;
+using Dropshot.API;
 using Timer = CounterStrikeSharp.API.Modules.Timers.Timer;
 
 namespace Dropshot;
@@ -21,13 +23,15 @@ public class Config : BasePluginConfig
     [JsonPropertyName("Debug")] public bool Debug { get; set; } = false;
 }
 
-public class DropshotPlugin : BasePlugin, IPluginConfig<Config>
+public class DropshotPlugin : BasePlugin, IPluginConfig<Config>, IDropshotApi
 {
     public override string ModuleName => "Dropshot";
-    public override string ModuleVersion => "1.1.1";
+    public override string ModuleVersion => "1.1.2";
     public override string ModuleAuthor => "Rexus Ohm";
     
     private MemoryFunctionWithReturn<CCSWeaponBaseGun, IntPtr, IntPtr, float>? _getInaccuracyFunc;
+    public static PluginCapability<IDropshotApi> DropshotCapability { get; } = new("dropshot:api");
+    public event Action<CCSPlayerController>? OnDropshotShot;
     
     private const int MaxPlayers = 65;
     private readonly float[] _lastJumpTimes = new float[MaxPlayers];
@@ -37,12 +41,15 @@ public class DropshotPlugin : BasePlugin, IPluginConfig<Config>
     
     private bool _isServerNoSpread;
     private Timer? _timer;
-    
+
+    #region Load/Unload
     public override void Load(bool hotReload)
     {
         // Инициализация функции через GameData
         // Плагин будет искать файл: addons/counterstrikesharp/gamedata/dropshot.json
         var signature = GameData.GetSignature("CCSWeaponBaseGun_GetInaccuracy");
+        
+        Capabilities.RegisterPluginCapability(DropshotCapability, () => this);
         
         if (string.IsNullOrEmpty(signature))
         {
@@ -101,6 +108,27 @@ public class DropshotPlugin : BasePlugin, IPluginConfig<Config>
         StopTimer();
         ClearPlayerCache();
     }
+    #endregion
+
+    #region TimerInitial
+    private void CheckServerNoSpreadInitial()
+    {
+        var nospreadConVar = ConVar.Find("weapon_accuracy_nospread");
+        if (nospreadConVar == null) return;
+        bool isNoSpreadEnabled = nospreadConVar.GetPrimitiveValue<bool>();
+        if (isNoSpreadEnabled != _isServerNoSpread)
+        {
+            _isServerNoSpread = isNoSpreadEnabled;
+            if (!_isServerNoSpread)
+            {
+                StartTimer();
+            }
+            else
+            {
+                StopTimer();
+            }
+        }
+    }
     
     private void StartTimer()
     {
@@ -118,7 +146,9 @@ public class DropshotPlugin : BasePlugin, IPluginConfig<Config>
         
         ResetAllClientSpread();
     }
-    
+    #endregion
+
+    #region PlayerCache
     private void InitializePlayerCache()
     {
         try
@@ -168,26 +198,9 @@ public class DropshotPlugin : BasePlugin, IPluginConfig<Config>
             RemovePlayerFromCache(i);
         }
     }
+    #endregion
     
-    private void CheckServerNoSpreadInitial()
-    {
-        var nospreadConVar = ConVar.Find("weapon_accuracy_nospread");
-        if (nospreadConVar == null) return;
-        bool isNoSpreadEnabled = nospreadConVar.GetPrimitiveValue<bool>();
-        if (isNoSpreadEnabled != _isServerNoSpread)
-        {
-            _isServerNoSpread = isNoSpreadEnabled;
-            if (!_isServerNoSpread)
-            {
-                StartTimer();
-            }
-            else
-            {
-                StopTimer();
-            }
-        }
-    }
-    
+    #region Main
     private void UpdatePlayerSpreadEffect()
     {
         if (_isServerNoSpread) return;
@@ -278,6 +291,16 @@ public class DropshotPlugin : BasePlugin, IPluginConfig<Config>
         if (slot >= 0 && slot < MaxPlayers && ShouldRemoveSpread(playerController, playerPawn, slot, isShot:true))
         {
             hook.SetReturn(0.0f);
+            
+            try
+            {
+                OnDropshotShot?.Invoke(playerController);
+            }
+            catch (Exception e)
+            {
+                Console.WriteLine($"[Dropshot] Error in OnDropshotShot event: {e}");
+            }
+            
             if (Config.Debug)
                 Server.PrintToChatAll($" \x02[Dropshot Debug] \x04" + $" NOSPREAD APPLIED\x01" + $" for {playerController.PlayerName}");
         }
@@ -366,6 +389,19 @@ public class DropshotPlugin : BasePlugin, IPluginConfig<Config>
         return true;
     }
     
+    public bool IsAllowDropshot(CCSPlayerController player)
+    {
+        if (_isServerNoSpread) return false;
+        if (!player.IsValid || player.IsBot) return false;
+        
+        var pawn = player.PlayerPawn.Value;
+        if (pawn == null || !pawn.IsValid) return false;
+
+        return ShouldRemoveSpread(player, pawn, player.Slot, isShot: false);
+    }
+    #endregion
+    
+    #region Events
     private HookResult OnServerCvar(EventServerCvar @event, GameEventInfo info)
     {
         if (@event.Cvarname == "weapon_accuracy_nospread" && @event.Cvarvalue is "true" or "1")
@@ -442,7 +478,9 @@ public class DropshotPlugin : BasePlugin, IPluginConfig<Config>
         }
         return HookResult.Continue;
     }
+    #endregion
     
+    #region Configuration
     public void OnConfigParsed(Config config)
     {
         if (config.Speed <= 0)
@@ -464,4 +502,5 @@ public class DropshotPlugin : BasePlugin, IPluginConfig<Config>
     }
 
     public required Config Config { get; set; }
+    #endregion
 }
